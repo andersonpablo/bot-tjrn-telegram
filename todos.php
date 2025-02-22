@@ -3,14 +3,17 @@
     <meta charset="UTF-8">
 </head>
 <?php
-// Aumenta o tempo m·ximo de execuÁ„o para 300 segundos (5 minutos)
+// Aumenta o tempo m√°ximo de execu√ß√£o para 300 segundos (5 minutos)
 header('Content-Type: text/html; charset=UTF-8');
 ini_set('max_execution_time', 600);
 
-// URL da p·gina de sess„o (use a URL real da p·gina)
+// URL da p√°gina de sess√£o (use a URL real da p√°gina)
 $url_sessao = 'https://plenariovirtual.tjrn.jus.br/sessao.php?sessao=4078';
 
-// FunÁ„o para fazer requisiÁıes HTTP com cURL
+// Cache em mem√≥ria para evitar requisi√ß√µes repetidas
+$cache = [];
+
+// Fun√ß√£o para fazer requisi√ß√µes HTTP com cURL
 function fetchUrl($url) {
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $url);
@@ -22,10 +25,42 @@ function fetchUrl($url) {
     return $response;
 }
 
-// FunÁ„o para extrair links dos processos da p·gina de sess„o
+// Fun√ß√£o para fazer requisi√ß√µes HTTP em paralelo com cURL Multi
+function fetchUrlsInParallel($urls) {
+    $mh = curl_multi_init();
+    $handles = [];
+
+    foreach ($urls as $url) {
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36');
+        curl_multi_add_handle($mh, $ch);
+        $handles[$url] = $ch;
+    }
+
+    $running = null;
+    do {
+        curl_multi_exec($mh, $running);
+        curl_multi_select($mh);
+    } while ($running > 0);
+
+    $results = [];
+    foreach ($handles as $url => $ch) {
+        $results[$url] = curl_multi_getcontent($ch);
+        curl_multi_remove_handle($mh, $ch);
+        curl_close($ch);
+    }
+
+    curl_multi_close($mh);
+    return $results;
+}
+
+// Fun√ß√£o para extrair links dos processos da p√°gina de sess√£o
 function extractProcessLinks($html) {
     $dom = new DOMDocument();
-    libxml_use_internal_errors(true); // Ignora erros de HTML inv·lido
+    libxml_use_internal_errors(true); // Ignora erros de HTML inv√°lido
     $dom->loadHTML($html);
     libxml_clear_errors();
 
@@ -45,37 +80,37 @@ function extractProcessLinks($html) {
     return $links;
 }
 
-// FunÁ„o para extrair informaÁıes de um processo (juÌzes e votos)
+// Fun√ß√£o para extrair informa√ß√µes de um processo (ju√≠zes e votos)
 function extractProcessInfo($html) {
     $dom = new DOMDocument();
-    libxml_use_internal_errors(true); // Ignora erros de HTML inv·lido
+    libxml_use_internal_errors(true); // Ignora erros de HTML inv√°lido
     $dom->loadHTML($html);
     libxml_clear_errors();
 
     $xpath = new DOMXPath($dom);
 
-    // XPaths para juÌzes e votos
+    // XPaths para ju√≠zes e votos
     $juiz_xpath = [
         '/html/body/div[4]/div/div[14]/div/div/div/div',  // Juiz 1
         '/html/body/div[4]/div/div[15]/div/div/div/div',
-        '/html/body/div[4]/div/div[15]/div[1]/div/div/div', // Juiz 4 (ou alternativa para o Gab. do Juiz F·bio)
+        '/html/body/div[4]/div/div[15]/div[1]/div/div/div', // Juiz 4 (ou alternativa para o Gab. do Juiz F√°bio)
         '/html/body/div[4]/div/div[15]/div[2]/div/div/div',  // Juiz 2 (Gab. do Juiz Reynaldo Odilio Martins Soares)
-        '/html/body/div[4]/div/div[16]/div/div/div/div',   // Juiz 3 (Gab. do Juiz F·bio AntÙnio Correia Filgueira)
+        '/html/body/div[4]/div/div[16]/div/div/div/div',   // Juiz 3 (Gab. do Juiz F√°bio Ant√¥nio Correia Filgueira)
     ];
 
     $voto_xpath = [
-        '/html/body/div[4]/div/h3[2]',  // Voto "N„o provido"
+        '/html/body/div[4]/div/h3[2]',  // Voto "N√£o provido"
         '/html/body/div[4]/div/h3[3]',  // Voto "Acompanha o relator"
-        '/html/body/div[4]/div/h3[4]',  // Voto "N„o proferido"
+        '/html/body/div[4]/div/h3[4]',  // Voto "N√£o proferido"
         '/html/body/div[4]/div/h3[5]',  // Voto alternativo ou "outros" votos
-        '/html/body/div[4]/div/h3[6]',  // Outro possÌvel voto
+        '/html/body/div[4]/div/h3[6]',  // Outro poss√≠vel voto
     ];
 
     $info = [];
 
-    // LaÁo para iterar os juÌzes e votos
+    // La√ßo para iterar os ju√≠zes e votos
     for ($i = 0; $i < count($juiz_xpath); $i++) {
-        // Verifica se o Ìndice do voto existe
+        // Verifica se o √≠ndice do voto existe
         if (isset($voto_xpath[$i])) {
             // Busca o juiz usando o XPath
             $juiz_node = $xpath->query($juiz_xpath[$i]);
@@ -89,7 +124,7 @@ function extractProcessInfo($html) {
                     ? trim($voto_node->item(0)->textContent) 
                     : 'Voto desconhecido';
 
-            // Se ambos juiz e voto estiverem como 'desconhecido', n„o exibe a informaÁ„o
+            // Se ambos juiz e voto estiverem como 'desconhecido', n√£o exibe a informa√ß√£o
             if ($voto !== 'Voto desconhecido' && $juiz !== 'Juiz desconhecido') {
                 $info[] = "$voto - Juiz: $juiz";
             }
@@ -99,39 +134,36 @@ function extractProcessInfo($html) {
     return $info;
 }
 
-// InÌcio do script
+// In√≠cio do script
 try {
-    // Faz a requisiÁ„o para a p·gina de sess„o
+    // Faz a requisi√ß√£o para a p√°gina de sess√£o
     $html_sessao = fetchUrl($url_sessao);
     if (!$html_sessao) {
-        throw new Exception("Erro ao acessar a p·gina de sess„o.");
+        throw new Exception("Erro ao acessar a p√°gina de sess√£o.");
     }
 
     // Extrai os links dos processos
     $process_links = extractProcessLinks($html_sessao);
     if (empty($process_links)) {
-        throw new Exception("Nenhum processo encontrado nesta p·gina.");
+        throw new Exception("Nenhum processo encontrado nesta p√°gina.");
     }
 
-    echo "N˙mero de processos encontrados: " . count($process_links) . "<br><br>";
+    echo "N√∫mero de processos encontrados: " . count($process_links) . "<br><br>";
 
     // Divide os links em lotes de 30
-    $process_batches = array_chunk($process_links, 20);
+    $process_batches = array_chunk($process_links, 30);
 
     // Itera sobre cada lote
     foreach ($process_batches as $batch) {
-        foreach ($batch as $link) {
-            echo "Processo: <a href='$link' target='_blank'>$link</a><br>";
+        // Faz requisi√ß√µes em paralelo para o lote atual
+        $results = fetchUrlsInParallel($batch);
 
-            // Faz a requisiÁ„o para a p·gina do processo
-            $html_processo = fetchUrl($link);
-            if (!$html_processo) {
-                echo "Erro ao acessar o processo: $link<br><br>";
-                continue;
-            }
+        // Processa cada resultado
+        foreach ($results as $url => $html) {
+            echo "Processo: <a href='$url' target='_blank'>$url</a><br>";
 
-            // Extrai as informaÁıes do processo
-            $info = extractProcessInfo($html_processo);
+            // Extrai as informa√ß√µes do processo
+            $info = extractProcessInfo($html);
             if (!empty($info)) {
                 echo "Placar:<br>";
                 foreach ($info as $line) {
@@ -142,9 +174,6 @@ try {
             }
 
             echo "<br>";
-
-            // Delay entre as requisiÁıes (1 segundo)
-            sleep(1);
         }
 
         // Delay entre os lotes (5 segundos)
