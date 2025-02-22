@@ -1,17 +1,17 @@
+<!DOCTYPE html>
 <html>
-    <head>
+<head>
     <meta charset="UTF-8">
+    <title>Crawler de Processos</title>
 </head>
+<body>
 <?php
-// Aumenta o tempo máximo de execução para 300 segundos (5 minutos)
-header('Content-Type: text/html; charset=UTF-8');
-ini_set('max_execution_time', 600);
+// Configurações iniciais
+header('Content-Type: text/html; charset=UTF-8'); // Define o charset da resposta HTTP
+ini_set('max_execution_time', 600); // Aumenta o tempo máximo de execução para 10 minutos
 
 // URL da página de sessão (use a URL real da página)
 $url_sessao = 'https://plenariovirtual.tjrn.jus.br/sessao.php?sessao=4078';
-
-// Cache em memória para evitar requisições repetidas
-$cache = [];
 
 // Função para fazer requisições HTTP com cURL
 function fetchUrl($url) {
@@ -61,7 +61,7 @@ function fetchUrlsInParallel($urls) {
 function extractProcessLinks($html) {
     $dom = new DOMDocument();
     libxml_use_internal_errors(true); // Ignora erros de HTML inválido
-    $dom->loadHTML($html);
+    $dom->loadHTML('<?xml encoding="UTF-8">' . $html); // Força o uso do UTF-8
     libxml_clear_errors();
 
     $xpath = new DOMXPath($dom);
@@ -84,7 +84,7 @@ function extractProcessLinks($html) {
 function extractProcessInfo($html) {
     $dom = new DOMDocument();
     libxml_use_internal_errors(true); // Ignora erros de HTML inválido
-    $dom->loadHTML($html);
+    $dom->loadHTML('<?xml encoding="UTF-8">' . $html); // Força o uso do UTF-8
     libxml_clear_errors();
 
     $xpath = new DOMXPath($dom);
@@ -170,7 +170,7 @@ try {
                     echo "$line<br>";
                 }
             } else {
-                echo "Nenhuma informacao encontrada.<br>";
+                echo "Nenhuma informação encontrada.<br>";
             }
 
             echo "<br>";
@@ -183,4 +183,5 @@ try {
     echo "Erro: " . $e->getMessage();
 }
 ?>
+</body>
 </html>
